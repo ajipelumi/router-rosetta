@@ -9,7 +9,7 @@ import {
   type UIMessage,
 } from "ai";
 import { cacheKey, readCache, writeCache } from "./cache";
-import { pickModel } from "./model";
+import { fallbackModel, pickModel } from "./model";
 
 export const maxDuration = 60;
 
@@ -61,20 +61,36 @@ export async function POST(req: Request) {
     },
   });
 
-  const chosen = pickModel();
+  const primary = pickModel();
+  const backup = fallbackModel(primary.provider);
+  let active = primary;
+  let switched = false;
 
   const result = streamText({
-    model: chosen.model,
+    model: primary.model,
     system: SYSTEM,
     messages: await convertToModelMessages(messages),
     tools: await mcpClient.tools(),
     stopWhen: stepCountIs(10),
+    // Runs before every step, including the retry below, so the swap sticks.
+    prepareStep: () => ({ model: active.model }),
     onFinish: ({ text }) => {
       if (key) writeCache(key, text);
       void mcpClient.close();
     },
     onError: ({ error }) => {
-      console.error(`[translate] ${chosen.provider}/${chosen.id}`, error);
+      console.error(`[translate] ${active.provider}/${active.id}`, error);
+
+      // One switch to the other provider, and only for failures the other
+      // provider could plausibly survive: a quota or an outage, not a bad
+      // request. Without the guard a genuine 400 would burn both providers.
+      if (backup && !switched && shouldFailOver(error)) {
+        switched = true;
+        active = backup;
+        console.warn(`[translate] falling back to ${backup.provider}/${backup.id}`);
+        return { retry: true as const };
+      }
+
       void mcpClient.close();
     },
   });
@@ -83,6 +99,14 @@ export async function POST(req: Request) {
     sendReasoning: false,
     onError: toClientError,
   });
+}
+
+/** Rate limits, token caps and provider outages are worth another provider. */
+function shouldFailOver(error: unknown): boolean {
+  const e = unwrap(error);
+  if (!APICallError.isInstance(e)) return false;
+  const status = e.statusCode;
+  return status === 429 || status === 413 || (status !== undefined && status >= 500);
 }
 
 /** Serve a cached answer as a normal UI message stream. */
