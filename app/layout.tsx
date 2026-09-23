@@ -1,6 +1,7 @@
 import type {Metadata, Viewport} from 'next'
 import {Newsreader, Inter, JetBrains_Mono} from 'next/font/google'
 import './globals.css'
+import {SITE_URL} from './siteUrl'
 
 const display = Newsreader({
   variable: '--font-display-stack',
@@ -27,6 +28,7 @@ const DESCRIPTION =
   'Translate Next.js code between the Pages Router and the App Router, with a citation for every claim.'
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Router Rosetta',
   description: DESCRIPTION,
   applicationName: 'Router Rosetta',

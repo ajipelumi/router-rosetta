@@ -26,6 +26,10 @@ Three variables are required at runtime. `.env.local` is gitignored — never co
 | `SANITY_ORGANIZATION_TOKEN` | `app/api/translate/route.ts` | Bearer token for that endpoint |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | `@ai-sdk/google` | Read implicitly by the provider; no code references it |
 
+`NEXT_PUBLIC_SITE_URL` is optional. It sets the canonical origin for
+`metadataBase`, `robots.txt` and `sitemap.xml`; on Vercel this falls back to
+the deployment's production URL, and locally to `http://localhost:3000`.
+
 If either Sanity variable is missing the route returns a configured error that the UI renders as "Not configured" rather than failing silently.
 
 ## How it works
@@ -70,9 +74,13 @@ npm run dev     # dev server
 npm run build   # production build (also typechecks)
 npm run start   # serve the production build
 npm run lint    # eslint
+npm test        # unit tests
 ```
 
-There is no test suite yet. The markdown parser is the part most worth covering.
+Tests use Node's built-in runner with `tsx`, so there is no test framework to
+install. `Markdown.test.tsx` covers the parser — headings, citations, code
+fences, lists and escaping. Node 20's `--test` does not expand globs, so new
+test files have to be added to the `test` script by name.
 
 ## Deploying
 
