@@ -2,10 +2,18 @@ import {Fragment, type ReactNode} from 'react'
 import {CodeBlock} from './CodeBlock'
 
 const fenceRe = () => /```(\w+)?\n?([\s\S]*?)```/g
-const inlineRe = () => /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[a-z0-9_]+(?:\/[a-z0-9_]+)*\])/gi
+// A citation path is either slugged with a slash (data_fetching/pages_static)
+// or one of the knowledge base's bare entries. Requiring that shape keeps
+// ordinary brackets — [1, 2, 3], [Link](url) — out of the chip treatment.
+const CITATION_PATH = String.raw`(?:[a-z0-9_]+\/[a-z0-9_/]+|migration)`
+const inlineRe = () =>
+  new RegExp(
+    String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\[\s*${CITATION_PATH}(?:\s*,\s*${CITATION_PATH})*\s*\])`,
+    'gi',
+  )
 
 function Citation({path}: {path: string}) {
-  const inner = path.slice(1, -1)
+  const inner = path
   const isPages = /(^|_|\/)pages(_|\/|$)/.test(inner)
   const isApp = /(^|_|\/)app(_|\/|$)/.test(inner)
 
@@ -51,7 +59,14 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
         </strong>,
       )
     } else {
-      out.push(<Citation key={`${keyBase}-r${m.index}`} path={token} />)
+      const paths = token
+        .slice(1, -1)
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+      for (const [pi, path] of paths.entries()) {
+        out.push(<Citation key={`${keyBase}-r${m.index}-${pi}`} path={path} />)
+      }
     }
     last = m.index + token.length
   }
