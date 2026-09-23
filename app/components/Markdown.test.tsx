@@ -70,6 +70,14 @@ describe('citations', () => {
     assert.deepEqual(citations('behaves like SSR [ migration ].'), ['migration'])
   })
 
+  test('accepts the CJK corner brackets gpt-oss emits', () => {
+    assert.deepEqual(citations('docs 【routing/app_router】.'), ['routing/app_router'])
+    assert.deepEqual(citations('see 【data_fetching/app_router, migration】 ok'), [
+      'data_fetching/app_router',
+      'migration',
+    ])
+  })
+
   test('recognises the bare migration entry', () => {
     assert.deepEqual(citations('Maps to that [migration].'), ['migration'])
   })
@@ -133,6 +141,45 @@ describe('lists and rules', () => {
     const src = 'Above.\n\n---\n\nBelow.'
     assert.equal(count(src, 'hr'), 1)
     assert.doesNotMatch(text(src), /---/)
+  })
+})
+
+describe('gfm constructs', () => {
+  test('renders a pipe table', () => {
+    const src = [
+      '| Router | Access |',
+      '|---|---|',
+      '| App | `searchParams` |',
+      '| Pages | `useRouter().query` |',
+    ].join('\n')
+    assert.equal(count(src, 'table'), 1)
+    assert.equal(count(src, 'th'), 2)
+    assert.equal(count(src, 'td'), 4)
+    assert.doesNotMatch(text(src), /\|---/)
+  })
+
+  test('renders italic with either marker', () => {
+    assert.equal(count('*Search Params* here', 'em'), 1)
+    assert.equal(count('_emphasis_ here', 'em'), 1)
+    assert.doesNotMatch(text('*Search Params* here'), /\*/)
+  })
+
+  test('keeps bold distinct from italic', () => {
+    assert.equal(count('**Bold**', 'strong'), 1)
+    assert.equal(count('**Bold**', 'em'), 0)
+  })
+
+  test('renders nested lists', () => {
+    assert.equal(count('- a\n  - b\n- c', 'ul'), 2)
+  })
+
+  test('renders blockquotes and links', () => {
+    assert.equal(count('> quoted', 'blockquote'), 1)
+    assert.equal(count('[docs](https://nextjs.org)', 'a'), 1)
+  })
+
+  test('leaves snake_case identifiers alone', () => {
+    assert.match(text('The data_fetching_pages value.'), /data_fetching_pages/)
   })
 })
 

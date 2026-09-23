@@ -45,7 +45,14 @@ app/page.tsx ──POST──> app/api/translate/route.ts ──> Gemini (via AI
 
 `route.ts` gives the model the MCP tools and a system prompt that forces an order of work: load the outline, identify the router from a specific API, read both paired entries, then answer. `stopWhen: stepCountIs(10)` bounds the tool loop.
 
-Responses stream back as markdown and are rendered by `app/components/Markdown.tsx` — a deliberately small parser covering only what the model emits (headings, lists, fenced code, inline code, bold, citations). It returns React elements throughout, so model output cannot inject markup. Swap it for `react-markdown` if the output shape widens.
+Responses stream back as markdown and are rendered by `app/components/Markdown.tsx`
+using `react-markdown` with `remark-gfm`, so tables, nested lists, blockquotes,
+links and emphasis follow the CommonMark/GFM spec rather than hand-written rules.
+Raw HTML is not enabled, so model output cannot inject markup.
+
+Citations are not markdown, so they survive parsing as plain text and are
+replaced with chips in a second pass over string children. Both `[path]` and the
+CJK corner brackets some models emit are accepted.
 
 ### Components
 

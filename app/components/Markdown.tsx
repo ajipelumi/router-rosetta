@@ -1,21 +1,21 @@
-import {Fragment, type ReactNode} from 'react'
+import type {ReactNode} from 'react'
+import ReactMarkdown, {type Components} from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {CodeBlock} from './CodeBlock'
 
-const fenceRe = () => /```(\w+)?\n?([\s\S]*?)```/g
-// A citation path is either slugged with a slash (data_fetching/pages_static)
-// or one of the knowledge base's bare entries. Requiring that shape keeps
-// ordinary brackets — [1, 2, 3], [Link](url) — out of the chip treatment.
 const CITATION_PATH = String.raw`(?:[a-z0-9_]+\/[a-z0-9_/]+|migration)`
-const inlineRe = () =>
-  new RegExp(
-    String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\[\s*${CITATION_PATH}(?:\s*,\s*${CITATION_PATH})*\s*\])`,
-    'gi',
-  )
+const CITATION_LIST = String.raw`\s*${CITATION_PATH}(?:\s*,\s*${CITATION_PATH})*\s*`
 
-function Citation({path}: {path: string}) {
-  const inner = path
-  const isPages = /(^|_|\/)pages(_|\/|$)/.test(inner)
-  const isApp = /(^|_|\/)app(_|\/|$)/.test(inner)
+// Models do not agree on the bracket. gpt-oss often emits the CJK corner
+// brackets 【 】 instead of [ ], so both are accepted.
+const CITATION_RE = new RegExp(
+  String.raw`\[${CITATION_LIST}\]|【${CITATION_LIST}】`,
+  'gi',
+)
+
+export function Citation({path}: {path: string}) {
+  const isPages = /(^|_|\/)pages(_|\/|$)/.test(path)
+  const isApp = /(^|_|\/)app(_|\/|$)/.test(path)
 
   const tone = isPages
     ? 'border-[var(--pages-border)] bg-[var(--pages-soft)] text-[var(--pages)]'
@@ -26,190 +26,149 @@ function Citation({path}: {path: string}) {
   return (
     <span
       className={`mx-1 inline-flex items-baseline rounded-full border px-2.5 py-0.5 align-baseline font-mono text-[11px] ${tone}`}
-      title={`Knowledge base entry: ${inner}`}
+      title={`Knowledge base entry: ${path}`}
     >
-      {inner}
+      {path}
     </span>
   )
 }
 
-function renderInline(text: string, keyBase: string): ReactNode[] {
+/**
+ * Citations like [data_fetching/pages_static] are not markdown, so they survive
+ * parsing as plain text and are replaced here. Only strings are touched, which
+ * keeps them out of code, links and other already-parsed nodes.
+ */
+function withCitations(children: ReactNode, keyBase: string): ReactNode {
+  if (typeof children === 'string') return splitCitations(children, keyBase)
+  if (Array.isArray(children)) {
+    return children.map((child, i) =>
+      typeof child === 'string' ? splitCitations(child, `${keyBase}-${i}`) : child,
+    )
+  }
+  return children
+}
+
+function splitCitations(text: string, keyBase: string): ReactNode {
   const out: ReactNode[] = []
-  const re = inlineRe()
   let last = 0
   let m: RegExpExecArray | null
+  const re = new RegExp(CITATION_RE.source, 'gi')
 
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) out.push(text.slice(last, m.index))
-    const token = m[0]
-
-    if (token.startsWith('`')) {
-      out.push(
-        <code
-          key={`${keyBase}-c${m.index}`}
-          className="border border-[var(--border)] bg-[var(--surface-sunken)] px-1.5 py-px font-mono text-[0.9em] text-[var(--primary)]"
-        >
-          {token.slice(1, -1)}
-        </code>,
-      )
-    } else if (token.startsWith('**')) {
-      out.push(
-        <strong key={`${keyBase}-b${m.index}`} className="font-semibold">
-          {token.slice(2, -2)}
-        </strong>,
-      )
-    } else {
-      const paths = token
-        .slice(1, -1)
-        .split(',')
-        .map((p) => p.trim())
-        .filter(Boolean)
-      for (const [pi, path] of paths.entries()) {
-        out.push(<Citation key={`${keyBase}-r${m.index}-${pi}`} path={path} />)
-      }
+    const paths = m[0]
+      .slice(1, -1)
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+    for (const [i, path] of paths.entries()) {
+      out.push(<Citation key={`${keyBase}-${m.index}-${i}`} path={path} />)
     }
-    last = m.index + token.length
+    last = m.index + m[0].length
   }
 
+  if (!out.length) return text
   if (last < text.length) out.push(text.slice(last))
   return out
 }
 
-const HEADING_STYLES: Record<number, string> = {
-  1: 'rr-display mt-6 mb-2 text-[26px] leading-[32px]',
-  2: 'rr-display mt-6 mb-2 text-[22px] leading-[28px]',
-  3: 'rr-display mt-5 mb-2 text-[19px] leading-[25px]',
-  4: 'rr-label mt-5 mb-2 text-[var(--primary)]',
-}
+const HEADING = 'rr-display text-[var(--text-secondary)] first:mt-0'
 
-function Heading({level, text, keyBase}: {level: number; text: string; keyBase: string}) {
-  const Tag = (level <= 2 ? 'h2' : level === 3 ? 'h3' : 'h4') as 'h2' | 'h3' | 'h4'
-  const tone = level === 4 ? '' : ' text-[var(--text-secondary)]'
-  return (
-    <Tag className={`${HEADING_STYLES[level] ?? HEADING_STYLES[3]}${tone} first:mt-0`}>
-      {renderInline(text, keyBase)}
-    </Tag>
-  )
-}
+const components: Components = {
+  h1: ({children}) => (
+    <h2 className={`${HEADING} mt-6 mb-2 text-[26px] leading-[32px]`}>
+      {withCitations(children, 'h1')}
+    </h2>
+  ),
+  h2: ({children}) => (
+    <h2 className={`${HEADING} mt-6 mb-2 text-[22px] leading-[28px]`}>
+      {withCitations(children, 'h2')}
+    </h2>
+  ),
+  h3: ({children}) => (
+    <h3 className={`${HEADING} mt-5 mb-2 text-[19px] leading-[25px]`}>
+      {withCitations(children, 'h3')}
+    </h3>
+  ),
+  h4: ({children}) => (
+    <h4 className="rr-label mt-5 mb-2 text-[var(--primary)] first:mt-0">
+      {withCitations(children, 'h4')}
+    </h4>
+  ),
+  p: ({children}) => (
+    <p className="my-3 text-[15px] leading-[26px] text-[var(--text-secondary)] first:mt-0 last:mb-0">
+      {withCitations(children, 'p')}
+    </p>
+  ),
+  ul: ({children}) => <ul className="my-3 list-disc space-y-1.5 pl-5">{children}</ul>,
+  ol: ({children}) => <ol className="my-3 list-decimal space-y-1.5 pl-5">{children}</ol>,
+  li: ({children}) => (
+    <li className="text-[15px] leading-[26px] text-[var(--text-secondary)] marker:text-[var(--primary)]">
+      {withCitations(children, 'li')}
+    </li>
+  ),
+  // Emphasis wrappers carry citations too, so they run through the same pass.
+  strong: ({children}) => (
+    <strong className="font-semibold">{withCitations(children, 'strong')}</strong>
+  ),
+  em: ({children}) => <em className="italic">{withCitations(children, 'em')}</em>,
+  del: ({children}) => <del className="opacity-60">{withCitations(children, 'del')}</del>,
+  hr: () => <hr className="my-5 border-0 border-t border-[var(--border)]" />,
+  a: ({href, children}) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="text-[var(--primary)] underline underline-offset-2"
+    >
+      {children}
+    </a>
+  ),
+  blockquote: ({children}) => (
+    <blockquote className="my-4 border-l-2 border-[var(--primary)] pl-4 text-[var(--text-primary)]">
+      {children}
+    </blockquote>
+  ),
+  table: ({children}) => (
+    <div className="my-4 overflow-x-auto border border-[var(--border-strong)]">
+      <table className="w-full border-collapse text-[14px]">{children}</table>
+    </div>
+  ),
+  thead: ({children}) => <thead className="bg-[var(--surface-sunken)]">{children}</thead>,
+  tr: ({children}) => <tr className="border-b border-[var(--border)] last:border-0">{children}</tr>,
+  th: ({children}) => (
+    <th className="rr-label px-4 py-2.5 text-left text-[var(--primary)]">
+      {withCitations(children, 'th')}
+    </th>
+  ),
+  td: ({children}) => (
+    <td className="px-4 py-2.5 align-top text-[var(--text-secondary)]">
+      {withCitations(children, 'td')}
+    </td>
+  ),
+  code: ({className, children, ...props}) => {
+    const lang = /language-(\w+)/.exec(className ?? '')?.[1]
+    const body = String(children).replace(/\n$/, '')
 
-function renderProse(text: string, keyBase: string): ReactNode {
-  const out: ReactNode[] = []
-  const lines = text.split('\n')
-  let para: string[] = []
-  let list: string[] = []
-  let k = 0
+    // react-markdown marks fenced blocks with a language class and wraps them
+    // in <pre>; anything else is inline.
+    const isBlock = 'node' in props && (lang != null || body.includes('\n'))
+    if (isBlock) return <CodeBlock lang={lang} code={body} />
 
-  function flushPara() {
-    if (!para.length) return
-    const body = para
-    para = []
-    out.push(
-      <p
-        key={`${keyBase}-p${k++}`}
-        className="my-3 text-[15px] leading-[26px] text-[var(--text-secondary)] first:mt-0 last:mb-0"
-      >
-        {body.map((l, li) => (
-          <Fragment key={li}>
-            {li > 0 && <br />}
-            {renderInline(l, `${keyBase}-p${k}-${li}`)}
-          </Fragment>
-        ))}
-      </p>,
+    return (
+      <code className="border border-[var(--border)] bg-[var(--surface-sunken)] px-1.5 py-px font-mono text-[0.9em] text-[var(--primary)]">
+        {children}
+      </code>
     )
-  }
-
-  function flushList() {
-    if (!list.length) return
-    const items = list
-    list = []
-    out.push(
-      <ul key={`${keyBase}-l${k++}`} className="my-3 list-disc space-y-1.5 pl-5">
-        {items.map((l, li) => (
-          <li
-            key={li}
-            className="text-[15px] leading-[26px] text-[var(--text-secondary)] marker:text-[var(--primary)]"
-          >
-            {renderInline(l, `${keyBase}-l${k}-${li}`)}
-          </li>
-        ))}
-      </ul>,
-    )
-  }
-
-  function flushAll() {
-    flushList()
-    flushPara()
-  }
-
-  for (const raw of lines) {
-    const line = raw.trim()
-
-    if (!line) {
-      flushAll()
-      continue
-    }
-
-    const heading = line.match(/^(#{1,6})\s+(.+)$/)
-    if (heading) {
-      flushAll()
-      out.push(
-        <Heading
-          key={`${keyBase}-h${k++}`}
-          level={Math.min(heading[1].length, 4)}
-          text={heading[2].replace(/\s+#+\s*$/, '')}
-          keyBase={`${keyBase}-h${k}`}
-        />,
-      )
-      continue
-    }
-
-    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(line)) {
-      flushAll()
-      out.push(
-        <hr key={`${keyBase}-hr${k++}`} className="my-5 border-0 border-t border-[var(--border)]" />,
-      )
-      continue
-    }
-
-    const bullet = line.match(/^(?:[-*+]|\d+\.)\s+(.*)$/)
-    if (bullet) {
-      flushPara()
-      list.push(bullet[1])
-      continue
-    }
-
-    flushList()
-    para.push(line)
-  }
-
-  flushAll()
-  return out
+  },
+  // CodeBlock renders its own <figure>/<pre>, so the wrapper is dropped.
+  pre: ({children}) => <>{children}</>,
 }
 
 export function Markdown({text}: {text: string}) {
-  const out: ReactNode[] = []
-  const re = fenceRe()
-  let last = 0
-  let m: RegExpExecArray | null
-
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push(renderProse(text.slice(last, m.index), `f${m.index}`))
-    out.push(<CodeBlock key={`code-${m.index}`} lang={m[1]} code={m[2].replace(/\n$/, '')} />)
-    last = m.index + m[0].length
-  }
-
-  const tail = text.slice(last)
-  const open = tail.indexOf('```')
-  if (open !== -1) {
-    if (open > 0) out.push(renderProse(tail.slice(0, open), 'tail'))
-    const partial = tail.slice(open + 3)
-    const nl = partial.indexOf('\n')
-    const lang = nl === -1 ? partial : partial.slice(0, nl)
-    const body = nl === -1 ? '' : partial.slice(nl + 1)
-    out.push(<CodeBlock key="code-open" lang={lang.trim() || undefined} code={body} />)
-  } else if (tail) {
-    out.push(renderProse(tail, 'tail'))
-  }
-
-  return <>{out}</>
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {text}
+    </ReactMarkdown>
+  )
 }
