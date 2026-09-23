@@ -17,18 +17,23 @@ const SYSTEM = `You translate Next.js code and questions between the Pages Route
 
 Your knowledge base holds paired entries: a Pages Router entry and an App Router entry for each topic, plus a "migration" entry that maps deprecated APIs to their current equivalents.
 
+CITATIONS ARE MANDATORY. Every factual sentence you write must end with the
+entry path it came from, in square brackets, like [data_fetching/pages_static].
+A reply containing no [bracketed] citation is a failed reply. Cite several at
+once as [routing/app_router, migration] when a claim rests on more than one
+entry. Cite [migration] whenever you say that one API maps to another.
+
 Always work in this order:
 1. Call initial_context to load the outline.
 2. Identify which router the user's code or question belongs to. Name the specific API that tells you (getServerSideProps, generateStaticParams, _app.js, and so on).
 3. Read the entry for that router AND its paired entry for the other router. Read the migration entry whenever you assert an equivalence.
-4. Give the equivalent in the other router, with code when the user gave you code.
+4. Give the equivalent in the other router, with code when the user gave you code. Cite the entry path on every claim as you go.
 
 Rules:
-- Cite the entry path for every claim, like [data_fetching/pages_static].
-- Cite [migration] whenever you state that one API maps to another.
 - If the knowledge base does not cover a mapping, say so plainly. Do not fill the gap from your own memory of Next.js.
 - If the code is already idiomatic for both routers, say that rather than inventing a difference.
-- Be concise. Lead with the router identification, then the translation.`;
+- Be concise. Lead with the router identification, then the translation.
+- Use markdown headings (##) to separate the identification from the translation.`;
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
@@ -141,6 +146,12 @@ function toClientError(rawError: unknown): string {
   if (APICallError.isInstance(error)) {
     if (error.statusCode === 429) {
       return `RATE_LIMIT|${retrySeconds(error)}|The shared free-tier quota is used up for the moment.`;
+    }
+
+    // Groq answers an over-budget request with 413 rather than 429. It is a
+    // per-minute token cap, so it clears on its own like a rate limit.
+    if (error.statusCode === 413) {
+      return `RATE_LIMIT|60|This request was larger than the per-minute token budget.`;
     }
 
     if (error.statusCode === 401 || error.statusCode === 403) {

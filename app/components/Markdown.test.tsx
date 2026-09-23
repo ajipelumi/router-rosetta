@@ -62,6 +62,14 @@ describe('citations', () => {
     ])
   })
 
+  test('tolerates spaces inside the brackets', () => {
+    // gpt-oss emits "[ data_fetching/pages_static ]" with inner padding.
+    assert.deepEqual(citations('runs per request [ data_fetching/pages_static ].'), [
+      'data_fetching/pages_static',
+    ])
+    assert.deepEqual(citations('behaves like SSR [ migration ].'), ['migration'])
+  })
+
   test('recognises the bare migration entry', () => {
     assert.deepEqual(citations('Maps to that [migration].'), ['migration'])
   })
