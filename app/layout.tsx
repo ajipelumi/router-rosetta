@@ -1,4 +1,4 @@
-import type {Metadata} from 'next'
+import type {Metadata, Viewport} from 'next'
 import {Newsreader, Inter, JetBrains_Mono} from 'next/font/google'
 import './globals.css'
 
@@ -23,10 +23,31 @@ const mono = JetBrains_Mono({
   display: 'swap',
 })
 
+const DESCRIPTION =
+  'Translate Next.js code between the Pages Router and the App Router, with a citation for every claim.'
+
 export const metadata: Metadata = {
   title: 'Router Rosetta',
-  description:
-    'Translate Next.js code between the Pages Router and the App Router, with a citation for every claim.',
+  description: DESCRIPTION,
+  applicationName: 'Router Rosetta',
+  openGraph: {
+    title: 'Router Rosetta',
+    description: DESCRIPTION,
+    siteName: 'Router Rosetta',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Router Rosetta',
+    description: DESCRIPTION,
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: [
+    {media: '(prefers-color-scheme: light)', color: '#FFFFFF'},
+    {media: '(prefers-color-scheme: dark)', color: '#0A0A0A'},
+  ],
 }
 
 const THEME_SCRIPT = `try{var t=localStorage.getItem('rr-theme');document.documentElement.dataset.theme=t==='dark'?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}`
