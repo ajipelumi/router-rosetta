@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Router Rosetta
 
-## Getting Started
+Translates Next.js code and questions between the **Pages Router** and the **App Router**, citing a knowledge base entry for every claim.
 
-First, run the development server:
+Paste `getServerSideProps` and it tells you this is Pages Router code, gives you the async Server Component equivalent, and cites the docs entry behind each statement. Ask "how do I read search params in each router?" and it answers for both. Every factual claim carries a citation chip — the point is that you can check the answer rather than trust it.
+
+The model is instructed not to answer from its own memory of Next.js. If the knowledge base does not cover a mapping, it says so instead of guessing.
+
+## Getting started
 
 ```bash
+npm install
+cp .env.local.example .env.local   # then fill in the values below
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Three variables are required at runtime. `.env.local` is gitignored — never commit it.
 
-## Learn More
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `SANITY_CONTEXT_MCP_URL` | `app/api/translate/route.ts` | MCP endpoint serving the knowledge base |
+| `SANITY_ORGANIZATION_TOKEN` | `app/api/translate/route.ts` | Bearer token for that endpoint |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | `@ai-sdk/google` | Read implicitly by the provider; no code references it |
 
-To learn more about Next.js, take a look at the following resources:
+If either Sanity variable is missing the route returns a configured error that the UI renders as "Not configured" rather than failing silently.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## How it works
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+A single client page talks to one streaming route.
 
-## Deploy on Vercel
+```
+app/page.tsx ──POST──> app/api/translate/route.ts ──> Gemini (via AI SDK)
+                                                 └──> Sanity knowledge base (via MCP)
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`route.ts` gives the model the MCP tools and a system prompt that forces an order of work: load the outline, identify the router from a specific API, read both paired entries, then answer. `stopWhen: stepCountIs(10)` bounds the tool loop.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Responses stream back as markdown and are rendered by `app/components/Markdown.tsx` — a deliberately small parser covering only what the model emits (headings, lists, fenced code, inline code, bold, citations). It returns React elements throughout, so model output cannot inject markup. Swap it for `react-markdown` if the output shape widens.
+
+### Components
+
+| File | Responsibility |
+| --- | --- |
+| `components/Markdown.tsx` | Markdown → React; citation chips colour-coded by router |
+| `components/CodeBlock.tsx` | Code surface with a copy button |
+| `components/ErrorNotice.tsx` | Typed errors, retry, rate-limit countdown |
+| `components/ThemeToggle.tsx` | Light-default theme, persisted, applied before first paint |
+| `components/useLocalRateLimit.ts` | Client-side 5-per-60s guard |
+| `components/HazeField.tsx` | WebGL background field, with reduced-motion and DOM fallbacks |
+
+### Rate limiting
+
+The Gemini free tier allows a small number of requests per minute, **shared across everyone hitting a deployment**. Two layers handle it:
+
+- **Server** — `route.ts` classifies provider errors into `RATE_LIMIT`, `AUTH`, `UPSTREAM`, `CONFIG` and `UNKNOWN`, sent to the client as `CODE|retryAfterSeconds|message`. It unwraps the AI SDK's `RetryError` to find the underlying 429 and reads Google's `retryDelay` from the response body, since no `retry-after` header is sent.
+- **Client** — `useLocalRateLimit` blocks a single user from exhausting the quota before the first rejection. It cannot prevent other visitors' requests from doing so; the server classification is the real backstop.
+
+## Design
+
+`router-rosetta-design.md` is the source of truth for the visual system — palette, type scale, spacing rhythm, surface treatment and motion. `app/globals.css` implements it as CSS custom properties. Change the tokens there rather than hardcoding values in components.
+
+## Scripts
+
+```bash
+npm run dev     # dev server
+npm run build   # production build (also typechecks)
+npm run start   # serve the production build
+npm run lint    # eslint
+```
+
+There is no test suite yet. The markdown parser is the part most worth covering.
+
+## Deploying
+
+The project is configured for Vercel. Set the three environment variables above in the project settings, for every environment you deploy to.
+
+```bash
+npx vercel        # preview deployment
+npx vercel --prod # production
+```
