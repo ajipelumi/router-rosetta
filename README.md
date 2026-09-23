@@ -18,13 +18,15 @@ Open http://localhost:3000.
 
 ## Environment
 
-Three variables are required at runtime. `.env.local` is gitignored — never commit it.
+The two Sanity variables are required. At least one model provider key is also
+required — Groq is preferred, Google is the fallback. `.env.local` is gitignored — never commit it.
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `SANITY_CONTEXT_MCP_URL` | `app/api/translate/route.ts` | MCP endpoint serving the knowledge base |
 | `SANITY_ORGANIZATION_TOKEN` | `app/api/translate/route.ts` | Bearer token for that endpoint |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | `@ai-sdk/google` | Read implicitly by the provider; no code references it |
+| `GROQ_API_KEY` | `@ai-sdk/groq` | Preferred model provider. Read implicitly |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | `@ai-sdk/google` | Fallback provider. Read implicitly |
 
 `NEXT_PUBLIC_SITE_URL` is optional. It sets the canonical origin for
 `metadataBase`, `robots.txt` and `sitemap.xml`; on Vercel this falls back to
@@ -55,6 +57,24 @@ Responses stream back as markdown and are rendered by `app/components/Markdown.t
 | `components/ThemeToggle.tsx` | Light-default theme, persisted, applied before first paint |
 | `components/useLocalRateLimit.ts` | Client-side 5-per-60s guard |
 | `components/HazeField.tsx` | WebGL background field, with reduced-motion and DOM fallbacks |
+
+### Model choice
+
+`api/translate/model.ts` picks Groq when `GROQ_API_KEY` is set and falls back to
+Google otherwise, so a deployment with only one key still works. Gemini's free
+tier caps at 20 requests per day per model, which a demo exhausts quickly; Groq's
+free tier is considerably larger. Override the model ids with `GROQ_MODEL` or
+`GOOGLE_MODEL`.
+
+### Caching
+
+`api/translate/cache.ts` holds first-turn answers in memory for a day. The
+example buttons send byte-identical prompts, so in a demo they would otherwise
+spend most of the quota re-deriving the same answers. Only single-turn prompts
+are cached — anything with history depends on turns the key does not capture.
+
+The cache is process-local, so it empties on a cold start and is not shared
+between serverless instances. It is a quota optimisation, not a source of truth.
 
 ### Rate limiting
 

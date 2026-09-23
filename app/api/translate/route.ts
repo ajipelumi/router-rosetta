@@ -1,12 +1,15 @@
-import { google } from "@ai-sdk/google";
 import { createMCPClient } from "@ai-sdk/mcp";
 import {
   APICallError,
   convertToModelMessages,
+  createUIMessageStreamResponse,
+  createUIMessageStream,
   stepCountIs,
   streamText,
   type UIMessage,
 } from "ai";
+import { cacheKey, readCache, writeCache } from "./cache";
+import { pickModel } from "./model";
 
 export const maxDuration = 60;
 
@@ -30,6 +33,12 @@ Rules:
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
+  const key = cacheKey(messages);
+  if (key) {
+    const hit = readCache(key);
+    if (hit) return replay(hit);
+  }
+
   const url = process.env.SANITY_CONTEXT_MCP_URL;
   const token = process.env.SANITY_ORGANIZATION_TOKEN;
   if (!url || !token) {
@@ -47,15 +56,20 @@ export async function POST(req: Request) {
     },
   });
 
+  const chosen = pickModel();
+
   const result = streamText({
-    model: google("gemini-3.6-flash"),
+    model: chosen.model,
     system: SYSTEM,
     messages: await convertToModelMessages(messages),
     tools: await mcpClient.tools(),
     stopWhen: stepCountIs(10),
-    onFinish: () => void mcpClient.close(),
+    onFinish: ({ text }) => {
+      if (key) writeCache(key, text);
+      void mcpClient.close();
+    },
     onError: ({ error }) => {
-      console.error("[translate]", error);
+      console.error(`[translate] ${chosen.provider}/${chosen.id}`, error);
       void mcpClient.close();
     },
   });
@@ -63,6 +77,20 @@ export async function POST(req: Request) {
   return result.toUIMessageStreamResponse({
     sendReasoning: false,
     onError: toClientError,
+  });
+}
+
+/** Serve a cached answer as a normal UI message stream. */
+function replay(text: string): Response {
+  return createUIMessageStreamResponse({
+    stream: createUIMessageStream({
+      execute: ({ writer }) => {
+        const id = "cached";
+        writer.write({ type: "text-start", id });
+        writer.write({ type: "text-delta", id, delta: text });
+        writer.write({ type: "text-end", id });
+      },
+    }),
   });
 }
 
