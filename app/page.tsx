@@ -47,7 +47,11 @@ export default function Page() {
   })
 
   const busy = status === 'submitted' || status === 'streaming'
-  const thinking = status === 'submitted'
+  const lastMessage = messages[messages.length - 1]
+  const hasVisibleText = lastMessage?.parts.some(
+    (p) => p.type === 'text' && p.text.trim().length > 0,
+  )
+  const thinking = busy && !hasVisibleText
 
   const [cooling, setCooling] = useState(false)
   const onCooldownChange = useCallback((active: boolean) => setCooling(active), [])
